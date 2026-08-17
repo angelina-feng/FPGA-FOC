@@ -1,11 +1,11 @@
 
 //--------------------------------------------------------------------------------------------------------
-// 模块：sincos 
+// Function：sincos 
 // Type    : synthesizable
 // Standard: Verilog 2001 (IEEE1364-2001)
-// 功能： 计算 sin 和 cos
-//        在 i_theta 上给出角度（0~π被映射为0~4095），
-//        在 o_sin 和 o_cos 上产生 sinθ 和 cosθ （-1~+1 被映射为 -16384~+16384）
+// Module： Calculate sin and cos
+//        The angle is given in i_theta (0~π is mapped to 0~4095).
+//        Generate sinθ and cosθ on o_sin and o_cos (the range -1 to +1 is mapped to -16384 to +16384).
 //--------------------------------------------------------------------------------------------------------
 
 module sincos(
