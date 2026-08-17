@@ -133,7 +133,7 @@ end endgenerate
 //           Ib = ADCa + ADCc - 2*ADCb
 //           Ic = ADCa + ADCb - 2*ADCc
 // Output update: The output is updated after each ADC sampling completion (i.e., each time a high-level pulse is generated on `en_adc`); thus, the update frequency equals the control cycle. 
-                  Following the update, `en_iabc` generates a high-level pulse lasting one clock cycle.
+            // Following the update, `en_iabc` generates a high-level pulse lasting one clock cycle.
 always @ (posedge clk or negedge init_done)
     if(~init_done) begin
         {en_iabc, ia, ib, ic} <= 0;
@@ -175,7 +175,7 @@ clark_tr u_clark_tr (
 // Formulas:    Id = Iα * cosψ + Iβ * sinψ;
 //              Iq = Iβ * cosψ - Iα * sinψ;
 // Output Update: Id and Iq are updated a few cycles after a high-level pulse occurs on en_ialphabeta; 
-                  simultaneously, en_idq generates a high-level pulse lasting one clock cycle (i.e., update frequency = control cycle).
+//                  simultaneously, en_idq generates a high-level pulse lasting one clock cycle (i.e., update frequency = control cycle).
 park_tr u_park_tr (
     .rstn         ( init_done                ),
     .clk          ( clk                      ),
@@ -191,7 +191,7 @@ park_tr u_park_tr (
 
 
 // Description: This module performs PID control for Id (the d-axis component of the current vector). 
-                Based on the target value (id_aim) and the actual value (id) of Id, it calculates the control variable Vd (the d-axis component of the voltage vector).
+//                Based on the target value (id_aim) and the actual value (id) of Id, it calculates the control variable Vd (the d-axis component of the voltage vector).
 // Input: Actual value of the d-axis current component (id)
 //        Target value of the d-axis current component (id_aim)
 // Output: d-axis voltage component (vd)
@@ -211,7 +211,7 @@ pi_controller u_id_pi (
 
 
 // Introduction:    This module performs PID control for Iq (the q-axis component of the current vector); 
-                   based on the target value (iq_aim) and the actual value (iq) of Iq, it calculates the control variable Vq (the q-axis component of the voltage vector).
+//                   based on the target value (iq_aim) and the actual value (iq) of Iq, it calculates the control variable Vq (the q-axis component of the voltage vector).
 // Input    ：Actual value of the current vector component on the q-axis (iq)
 //          Target value of the current vector component on the q-axis (iq_aim)
 // Output: Component of the voltage vector on the q-axis (vq)
@@ -252,7 +252,7 @@ cartesian2polar u_cartesian2polar (
 
 // Introduction    ：This `always` block is used for initialization and the inverse Park transform.
 //           I. Initialization: Perform initial mechanical angle calibration. First, set Vsρ to its maximum value and Vsθ to 0; the rotor will naturally rotate to the position where the electrical angle ψ is 0. 
-                                Then, record the current mechanical angle φ as the initial mechanical angle Φ. Subsequently, the electrical angle ψ can be calculated using the formula ψ = N * (φ - Φ).
+//                                Then, record the current mechanical angle φ as the initial mechanical angle Φ. Subsequently, the electrical angle ψ can be calculated using the formula ψ = N * (φ - Φ).
                                     
 //           II. Inverse Park Transform: After initialization, continuously transform the voltage vector from the rotor polar coordinate system (Vrρ, Vrθ) to the stator polar coordinate system (Vsρ, Vsθ).
 // Input    ：φ，Vrρ, Vrθ
@@ -303,7 +303,7 @@ svpwm u_svpwm (
 // Inputs: 3-phase PWM signals pwm_a, pwm_b, pwm_c
 // Output: 3-phase current ADC sampling timing control signal sn_adc
 // Principle: This module detects the moment when pwm_a, pwm_b, and pwm_c are all at a low level; 
-              after a delay of SAMPLE_DELAY clock cycles, it generates a high-level pulse lasting one clock cycle on the sn_adc signal.
+//              after a delay of SAMPLE_DELAY clock cycles, it generates a high-level pulse lasting one clock cycle on the sn_adc signal.
 hold_detect #(
     .SAMPLE_DELAY ( SAMPLE_DELAY             )
 ) u_adc_sn_ctrl (
