@@ -29,26 +29,27 @@ wire        [11:0] phi;
 wire pwm_en, pwm_a, pwm_b, pwm_c;
 
 
-// 这里只是刚好借助了 sincos 模块来生成正弦波给 cartesian2polar ，只是为了仿真。在 FOC 设计中 sincos 模块并不是用来给 cartesian2polar 提供输入数据的，而是被 park_tr 调用。
+// Here, the sincos module is simply utilized to generate a sine wave for the cartesian2polar module, solely for simulation purposes. 
+In an FOC design, the sincos module is not used to provide input data to cartesian2polar; instead, it is called by park_tr. 
 sincos u_sincos (
     .rstn         ( rstn       ),
     .clk          ( clk        ),
     .i_en         ( 1'b1       ),
-    .i_theta      ( theta      ),   // input : θ, 一个递增的角度值
+    .i_theta      ( theta      ),   // input: θ, an increasing angle value
     .o_en         (            ),
-    .o_sin        ( y          ),   // output : y, 振幅为 ±16384 的正弦波
-    .o_cos        ( x          )    // output : x, 振幅为 ±16384 的余弦波
+    .o_sin        ( y          ),   // output: y, sine wave with amplitude ±16384
+    .o_cos        ( x          )    // output: x, cosine wave with amplitude ±16384
 );
 
 cartesian2polar u_cartesian2polar (
     .rstn         ( rstn       ),
     .clk          ( clk        ),
     .i_en         ( 1'b1       ),
-    .i_x          ( x / 16'sd5 ),  // input : 振幅为 ±3277 的余弦波
-    .i_y          ( y / 16'sd5 ),  // input : 振幅为 ±3277 的正弦波
+    .i_x          ( x / 16'sd5 ),  // input: cosine wave with amplitude ±3277
+    .i_y          ( y / 16'sd5 ),  // input: sine wave with amplitude ±3277
     .o_en         (            ),
-    .o_rho        ( rho        ),  // output: ρ, 应该是一直等于或近似 3277
-    .o_theta      ( phi        )   // output: φ, 应该是一个接近 θ 的角度值
+    .o_rho        ( rho        ),  // output: ρ, should be constantly equal to or approximately 3277
+    .o_theta      ( phi        )   // output: φ, should be an angle value close to θ
 );
 
 svpwm u_svpwm (
@@ -69,7 +70,7 @@ integer i;
 initial begin
     while(~rstn) @ (posedge clk);
     for(i=0; i<200; i=i+1) begin
-        theta <= 25 * i;               // 让 θ 递增
+        theta <= 25 * i;               // Let θ increase.
         repeat(2048) @ (posedge clk);
         $display("%d/200", i);
     end
