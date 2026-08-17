@@ -52,58 +52,71 @@ module foc_top #(
     
     input  wire        [11:0] adc_a, adc_b, adc_c,  // 3-phase current ADC sampling results (denoted as ADCa, ADCb, and ADCc), with a value range of 0 to 4095.
     
-    // ----------------------------------------------- 3相 PWM 信号，（包含使能信号） -----------------------------------------------------------------------------------------------------------------------------
-    output wire               pwm_en,               // 3相共用的使能信号，当 pwm_en=0 时，6个MOS管全部关断。
-    output wire               pwm_a,                // A相PWM信号。当 =0 时。下桥臂导通；当 =1 时，上桥臂导通
-    output wire               pwm_b,                // B相PWM信号。当 =0 时。下桥臂导通；当 =1 时，上桥臂导通
-    output wire               pwm_c,                // C相PWM信号。当 =0 时。下桥臂导通；当 =1 时，上桥臂导通
-    // ----------------------------------------------- d/q轴（转子直角坐标系）的电流监测 --------------------------------------------------------------------------------------------------------------------------
-    output wire               en_idq,               // 出现高电平脉冲时说明 id 和 iq 出现了新值，每个控制周期 en_idq 会产生一个高电平脉冲
-    output wire signed [15:0] id,                   // d 轴（直轴）的实际电流值（简记为 Id），可正可负
-    output wire signed [15:0] iq,                   // q 轴（交轴）的实际电流值（简记为 Iq），可正可负（若正代表逆时针，则负代表顺时针，反之亦然）
-    // ----------------------------------------------- d/q轴（转子直角坐标系）的电流控制目标 ----------------------------------------------------------------------------------------------------------------------
-    input  wire signed [15:0] id_aim,               // d 轴（直轴）的目标电流值（简记为 Idaim），可正可负，在不使用弱磁控制的情况下一般设为0
-    input  wire signed [15:0] iq_aim,               // q 轴（直轴）的目标电流值（简记为 Iqaim），可正可负（若正代表逆时针，则负代表顺时针，反之亦然）
+    // -----------------------------------------------3-phase PWM signals (including enable signal) -----------------------------------------------------------------------------------------------------------------------------
+    output wire               pwm_en,               // A shared enable signal for all three phases; when pwm_en = 0, all six MOSFETs are turned off.
+    output wire               pwm_a,                // Phase A PWM signal. When the signal is 0, the lower bridge arm conducts; when it is 1, the upper bridge arm conducts.
+    output wire               pwm_b,                // Phase B
+    output wire               pwm_c,                // Phase C
+    
+    // ----------------------------------------------- d/q-axis (rotor-based Cartesian coordinate system) current monitoring ----------------------------------------------------------------------------------------------------
+    output wire               en_idq,               // The appearance of a high-level pulse indicates that new values ​​for id and iq have become available; a high-level pulse is generated on en_idq during each control cycle.
+    output wire signed [15:0] id,                   // The actual current value of the d-axis (direct axis) (abbreviated as Id), which can be positive or negative.
+    output wire signed [15:0] iq,                   // The actual current value of the q-axis (quadrature axis), denoted simply as Iq, can be positive or negative (if positive represents counter-clockwise, then negative 
+                                                    // represents clockwise, and vice versa).
+    
+    // ----------------------------------------------- Current control targets for the d/q axes (rotor-fixed coordinate system) ------------------------------------------------------------------------
+    input  wire signed [15:0] id_aim,               // The target current value for the d-axis (direct axis)—abbreviated as Idaim—can be positive or negative; it is generally set to zero when field-weakening control is not used.
+    input  wire signed [15:0] iq_aim,               // The target current value for the q-axis (denoted as Iqaim) can be positive or negative (if positive represents counter-clockwise, then negative represents clockwise, and vice versa).
     // ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-    output reg                init_done             // 初始化结束信号。在初始化结束前=0，在初始化结束后（进入FOC控制状态）=1
+    output reg                init_done             // Initialization completion signal. 0 before initialization completes; 1 after initialization completes (upon entering FOC control mode).
 );
 
 reg         [31:0] init_cnt;
-reg         [11:0] init_phi;      // 初始机械角度（简记为 Φ）。即电角度=0时对应的机械角度，在初始化结束时被确定，用来在之后进行机械角度到电角度的转换。取值范围0~4095。0对应0°；1024对应90°；2048对应180°；3072对应270°。
+reg         [11:0] init_phi;      // Initial mechanical angle (abbreviated as Φ). This is the mechanical angle corresponding to an electrical angle of 0°; it is determined upon completion of initialization and is used for 
+                                  // subsequent conversions between mechanical and electrical angles. The value range is 0–4095: 0 corresponds to 0°, 1024 to 90°, 2048 to 180°, and 3072 to 270°.。
 
-reg         [11:0] psi;           // 当前电角度（简记为 ψ）。取值范围0~4095。0对应0°；1024对应90°；2048对应180°；3072对应270°。
+reg         [11:0] psi;           // Current electrical angle (abbreviated as ψ). The value range is 0–4095: 0 corresponds to 0°, 1024 to 90°, 2048 to 180°, and 3072 to 270°.
 
-reg                en_iabc;       // 3相上的电流有效，在产生高电平脉冲时，说明 Ia, Ib, Ic 发生更新
-reg  signed [15:0] ia, ib, ic;    // 3相上的电流。为正代表电流从半桥流入电机，为负代表电流从电机流入半桥。ia 是A相的电流（简记为Ia），ib 是B相的电流（简记为Ib），ic 是C相的电流（简记为Ic）
+reg                en_iabc;       // The currents on the three phases are valid; the generation of a high-level pulse indicates that Ia, Ib, and Ic have been updated.
 
-wire               en_ialphabeta; // α/β轴（定子直角坐标系）上的电流矢量有效信号，在产生高电平脉冲时，说明 Iα, Iβ 发生更新
-wire signed [15:0] ialpha, ibeta; // α/β轴（定子直角坐标系）上的电流矢量。ialpha 是 α 轴的分量（简记为 Iα），ibeta 是 β 轴的分量（简记为 Iβ）
+reg  signed [15:0] ia, ib, ic;    // Currents in the three phases. A positive value indicates current flowing from the half-bridge into the motor, while a negative value indicates current flowing from the motor into the half-bridge. 
+                                  // ia is the current in phase A (abbreviated as Ia), ib is the current in phase B (abbreviated as Ib), and ic is the current in phase C (abbreviated as Ic).
 
-wire signed [15:0] vd, vq;        // d/q轴（转子直角坐标系）上的电压矢量，是 PID 算法输出的值。Vd 是 d 轴 上的电压分量，Vq 是 q 轴上的电压分量
+wire               en_ialphabeta; // When a high-level pulse is generated, the valid current vector signal on the α/β axes (stator Cartesian coordinate system) indicates that Iα and Iβ have been updated.
 
-wire        [11:0] vr_rho;        // 转子极坐标系上的电压矢量的幅值（简记为 Vrρ ），由 Vd 和 Vq 转换到极坐标系得来，具体地讲，Vrρ = √(Vd^2+Vq^2)
-wire        [11:0] vr_theta;      // 转子极坐标系上的电压矢量的角度（简记为 Vrθ ），由 vd 和 vq 转换到极坐标系得来，具体地讲，Vrθ = arctan(Vq/Vd) 。取值范围0~4095。0对应0°；1024对应90°；2048对应180°；3072对应270°。
+wire signed [15:0] ialpha, ibeta; // Current vector in the α/β-axis (stator Cartesian coordinate system). `ialpha` is the component along the α-axis (abbreviated as Iα), and `ibeta` is the component along the β-axis (abbreviated as Iβ).
 
-reg         [11:0] vs_rho;        // 定子极坐标系上的电压矢量的幅值（简记为 Vsρ ），由 Vrρ 做旋转变换得来，由于幅值的旋转不变性，实际上 Vsρ = Vrρ。 通过 SVPWM 模块，Vsρ 和 Vsθ 可以产生 3 相 PWM 信号
-reg         [11:0] vs_theta;      // 定子极坐标系上的电压矢量的角度（简记为 Vsθ ），由 Vrθ 做旋转变换得来，由于转子极坐标系是定子极坐标系旋转 ψ 得来，所以 Vsθ = Vrθ + ψ。 通过 SVPWM 模块，Vsρ 和 Vsθ 可以产生 3 相 PWM 信号。 Vsθ取值范围0~4095。0对应0°；1024对应90°；2048对应180°；3072对应270°。
+wire signed [15:0] vd, vq;        // The voltage vectors on the d/q axes (rotor Cartesian coordinate system) are the values ​​output by the PID algorithm. Vd is the voltage component on the d-axis, and Vq is the voltage component on the q-axis.
+
+wire        [11:0] vr_rho;        // The magnitude of the voltage vector in the rotor polar coordinate system (denoted as Vrρ) is derived by transforming Vd and Vq into the polar coordinate system; specifically, Vrρ = √(Vd² + Vq²).
+
+wire        [11:0] vr_theta;      // The angle of the voltage vector in the rotor polar coordinate system (denoted as Vrθ) is derived by converting vd and vq into polar coordinates; specifically, Vrθ = arctan(Vq/Vd). 
+                                  // The value range is 0 to 4095, where 0 corresponds to 0°, 1024 to 90°, 2048 to 180°, and 3072 to 270°.
+
+reg         [11:0] vs_rho;        // The magnitude of the voltage vector in the stator polar coordinate system (denoted as Vsρ) is obtained by applying a rotational transformation to Vrρ; 
+                                  // due to the rotational invariance of the magnitude, Vsρ is effectively equal to Vrρ. Through the SVPWM module, Vsρ and Vsθ can be used to generate three-phase PWM signals.
+
+reg         [11:0] vs_theta;      // The angle of the voltage vector in the stator polar coordinate system (denoted as Vsθ) is obtained by applying a rotation transformation to Vrθ; since the rotor polar coordinate system is derived by 
+                                  // rotating the stator polar coordinate system by ψ, it follows that Vsθ = Vrθ + ψ. The SVPWM module uses Vsρ and Vsθ to generate three-phase PWM signals. 
+                                  // The value range for Vsθ is 0 to 4095, where 0 corresponds to 0°, 1024 to 90°, 2048 to 180°, and 3072 to 270°.
 
 
 
-// 简介    ：该 always 块负责从机械角度 φ 算出电角度 ψ
-// 参数    ：极对数 N （参数POLE_PAIR）
-// 输入    ：机械角度 φ
-//           初始机械角度 Φ
-// 输出    ：电角度 ψ
-// 计算公式：   ψ =  N * (φ - Φ)    （若 A->B->C->A 的旋转方向与 φ 增大的方向相同）
-//         ：或 ψ = -N * (φ - Φ)    （若 A->B->C->A 的旋转方向与 φ 增大的方向相反，即角度传感器装反了）
-// 输出更新：只要 φ 改变，ψ 就在下一周期立即改变
-generate if(ANGLE_INV) begin                              // 如果角度传感器装反了
+// Description: This `always` block is responsible for calculating the electrical angle ψ from the mechanical angle φ.
+// Parameter: Pole pair number N (parameter POLE_PAIR)
+// Input: Mechanical angle φ
+//        Initial mechanical angle Φ
+// Output: Electrical angle ψ
+// Calculation formula: ψ = N * (φ - Φ) (if the direction of rotation A→B→C→A is the same as the direction in which φ increases)
+//         ：Or ψ = -N * (φ - Φ)    (if the direction of rotation A→B→C→A is opposite to the direction in which φ increases—i.e., the angle sensor is installed in reverse)
+// Output update: Whenever φ changes, ψ changes immediately in the next cycle.
+generate if(ANGLE_INV) begin                              // If the angle sensor is installed backwards
     always @ (posedge clk or negedge init_done) 
         if(~init_done)
             psi <= 0;
         else
             psi <= {4'h0, POLE_PAIR} * (init_phi - phi);  // ψ = -N * (φ - Φ)
-end else begin                                            // 如果角度传感器没装反
+end else begin                                            // If the angle sensor is not installed backwards
     always @ (posedge clk or negedge init_done) 
         if(~init_done)
             psi <= 0;
@@ -113,13 +126,14 @@ end endgenerate
 
 
 
-// 简介    ：该 always 块根据基尔霍夫电流定律(KCL)在 ADC 原始值 (ADCa, ADCb, ADCc) 上减去偏移值，计算出 3 相电流值 Ia, Ib, Ic
-// 输入    ：ADC 原始值 ADCa, ADCb, ADCc
-// 输出    ：相电流 Ia, Ib, Ic
-// 计算公式：Ia = ADCb + ADCc - 2*ADCa
+// Description: Based on Kirchhoff's Current Law (KCL), this `always` block calculates the three-phase currents (Ia, Ib, Ic) by subtracting offset values ​​from the raw ADC readings (ADCa, ADCb, ADCc).
+// Input: Raw ADC values ​​ADCa, ADCb, ADCc
+// Output: Phase currents Ia, Ib, Ic
+// Calculation formula：Ia = ADCb + ADCc - 2*ADCa
 //           Ib = ADCa + ADCc - 2*ADCb
 //           Ic = ADCa + ADCb - 2*ADCc
-// 输出更新：ADC 每采样完成一次（即en_adc每产生一次高电平脉冲）后更新一次，即更新频率 = 控制周期，更新后 en_iabc 产生一个时钟周期的高电平脉冲
+// Output update: The output is updated after each ADC sampling completion (i.e., each time a high-level pulse is generated on `en_adc`); thus, the update frequency equals the control cycle. 
+                  Following the update, `en_iabc` generates a high-level pulse lasting one clock cycle.
 always @ (posedge clk or negedge init_done)
     if(~init_done) begin
         {en_iabc, ia, ib, ic} <= 0;
@@ -134,12 +148,12 @@ always @ (posedge clk or negedge init_done)
 
 
 
-// 简介    ：该模块用于进行 clark 变换，根据 3 相电流计算 α/β 轴（定子直角坐标系）的电流矢量
-// 输入    ：相电流 Ia, Ib, Ic
-// 输出    ：α/β 轴的电流矢量 Iα, Iβ
-// 计算公式：Iα = 2 * Ia - Ib - Ic
-//           Iβ = √3 * (Ib - Ic)
-// 输出更新：en_iabc 每产生一个高电平脉冲后的若干周期后 Iα, Iβ 更新，同时 en_ialphabeta 产生一个时钟周期的高电平脉冲，即更新频率 = 控制周期
+// Description : This module performs the Clark transform, calculating the α/β-axis current vectors (in the stator Cartesian coordinate system) based on three-phase currents.
+// Inputs      : Phase currents Ia, Ib, Ic
+// Outputs     : α/β-axis current vectors Iα, Iβ
+// Formulas    : Iα = 2 * Ia - Ib - Ic
+//               Iβ = √3 * (Ib - Ic)
+// Output Update: Iα and Iβ are updated a few cycles after a high-level pulse is generated on en_iabc; simultaneously, a high-level pulse lasting one clock cycle is generated on en_ialphabeta (i.e., update frequency = control cycle).
 clark_tr u_clark_tr (
     .rstn         ( init_done                ),
     .clk          ( clk                      ),
@@ -154,13 +168,14 @@ clark_tr u_clark_tr (
 
 
 
-// 简介    ：该模块用于进行 park 变换，根据 α/β 轴（定子直角坐标系）的电流矢量 计算 d/q 轴（转子直角坐标系）的电流矢量
-// 输入    ：电角度 ψ
-//           α/β 轴的电流矢量 Iα, Iβ
-// 输出    ：d/q 轴的电流矢量 Id, Iq
-// 计算公式：Id = Iα * cosψ + Iβ * sinψ;
-//           Iq = Iβ * cosψ - Iα * sinψ;
-// 输出更新：en_ialphabeta 每产生一个高电平脉冲后的若干周期后 Id, Iq 更新，同时 en_idq 产生一个时钟周期的高电平脉冲，即更新频率 = 控制周期
+// Description: This module performs the Park transformation, calculating d/q-axis current vectors (rotor-based Cartesian coordinates) from α/β-axis current vectors (stator-based Cartesian coordinates).
+// Inputs:      Electrical angle ψ
+//              α/β-axis current vectors Iα, Iβ
+// Outputs:     d/q-axis current vectors Id, Iq
+// Formulas:    Id = Iα * cosψ + Iβ * sinψ;
+//              Iq = Iβ * cosψ - Iα * sinψ;
+// Output Update: Id and Iq are updated a few cycles after a high-level pulse occurs on en_ialphabeta; 
+                  simultaneously, en_idq generates a high-level pulse lasting one clock cycle (i.e., update frequency = control cycle).
 park_tr u_park_tr (
     .rstn         ( init_done                ),
     .clk          ( clk                      ),
@@ -175,12 +190,12 @@ park_tr u_park_tr (
 
 
 
-// 简介    ：该模块用于进行 Id (电流矢量在d轴的分量) 的 PID 控制，根据 Id 的目标值（id_aim）和 Id 的实际值（id），算出执行变量 Vd（电压矢量在d轴上的分量）
-// 输入    ：电流矢量在d轴的分量的实际值（id）
-//           电流矢量在d轴的分量的目标值（id_aim）
-// 输出    ：电压矢量在d轴上的分量（vd）
-// 原理    ：PID 控制（实际上没有D，只有P和I）
-// 输出更新：en_idq 每产生一个高电平脉冲后的若干周期后 Vd 更新，即更新频率 = 控制周期
+// Description: This module performs PID control for Id (the d-axis component of the current vector). 
+                Based on the target value (id_aim) and the actual value (id) of Id, it calculates the control variable Vd (the d-axis component of the voltage vector).
+// Input: Actual value of the d-axis current component (id)
+//        Target value of the d-axis current component (id_aim)
+// Output: d-axis voltage component (vd)
+// Output update: Vd is updated a certain number of cycles after each high-level pulse is generated by en_idq; that is, the update frequency equals the control cycle.
 pi_controller u_id_pi (
     .rstn         ( init_done                ),
     .clk          ( clk                      ),
@@ -195,12 +210,13 @@ pi_controller u_id_pi (
 
 
 
-// 简介    ：该模块用于进行 Iq (电流矢量在q轴的分量) 的 PID 控制，根据 Iq 的目标值（iq_aim）和 Iq 的实际值（iq），算出执行变量 Vq（电压矢量在d轴上的分量）
-// 输入    ：电流矢量在q轴的分量的实际值（iq）
-//           电流矢量在q轴的分量的目标值（iq_aim）
-// 输出    ：电压矢量在q轴上的分量（vq）
-// 原理    ：PID 控制（实际上没有D，只有P和I）
-// 输出更新：en_idq 每产生一个高电平脉冲后的若干周期后 Vq 更新，即更新频率 = 控制周期
+// Introduction:    This module performs PID control for Iq (the q-axis component of the current vector); 
+                   based on the target value (iq_aim) and the actual value (iq) of Iq, it calculates the control variable Vq (the q-axis component of the voltage vector).
+// Input    ：Actual value of the current vector component on the q-axis (iq)
+//          Target value of the current vector component on the q-axis (iq_aim)
+// Output: Component of the voltage vector on the q-axis (vq)
+// Principle: PID control (in practice, there is no D; only P and I are used).
+// Output update: Vq is updated a certain number of cycles after each high-level pulse is generated by en_idq; that is, the update frequency equals the control cycle.
 pi_controller u_iq_pi (
     .rstn         ( init_done                ),
     .clk          ( clk                      ),
@@ -215,12 +231,12 @@ pi_controller u_iq_pi (
 
 
 
-// 简介    ：该模块用于把电压矢量从转子直角坐标系 (Vd, Vq) 变换到转子极坐标系 (Vrρ, Vrθ)
-// 输入    ：电压矢量在转子直角坐标系的 d 轴上的分量（Vd）
-//           电压矢量在转子直角坐标系的 q 轴上的分量（Vq）
-// 输出    ：电压矢量在转子极坐标系上的幅值（Vrρ）
-// 原理    ：电压矢量在转子极坐标系上的角度（Vrθ）
-// 输出更新：Vd, Vq 每产生变化的若干周期后 Vrρ 和 Vrθ 更新，更新频率 = 控制周期
+// Introduction: This module is used to transform the voltage vector from the rotor Cartesian coordinate system (Vd, Vq) to the rotor polar coordinate system (Vrρ, Vrθ).
+// Input: Component of the voltage vector on the d-axis of the rotor's rectangular coordinate system (Vd)
+//        The component of the voltage vector on the q-axis of the rotor's rectangular coordinate system (Vq)
+// Output: Magnitude of the voltage vector in the rotor polar coordinate system (Vrρ)
+// Principle: The angle of the voltage vector in the rotor polar coordinate system (Vrθ)
+// Output update: Vrρ and Vrθ are updated after a certain number of cycles in which Vd or Vq change; update frequency = control cycle.
 cartesian2polar u_cartesian2polar (
     .rstn         ( init_done                ),
     .clk          ( clk                      ),
@@ -234,11 +250,13 @@ cartesian2polar u_cartesian2polar (
 
 
 
-// 简介    ：该 always 块用于进行初始化 和 反park变换
-//           一、初始化： 进行初始机械角度标定。首先令 Vsρ 取最大，Vsθ=0，则转子自然会转到电角度 ψ=0 的地方。然后记录下此时的机械角度 φ 作为初始机械角度 Φ 。则之后就可以用公式 ψ = N * (φ - Φ) 计算电角度。
-//           二、反park变换： 初始化完成后，持续地把电压矢量从转子极坐标系 (Vrρ, Vrθ) 变换到 定子极坐标系 (Vsρ, Vsθ)
-// 输入    ：φ，Vrρ, Vrθ
-// 输出    ：Φ，Vsρ, Vsθ，init_done
+// Introduction    ：This `always` block is used for initialization and the inverse Park transform.
+//           I. Initialization: Perform initial mechanical angle calibration. First, set Vsρ to its maximum value and Vsθ to 0; the rotor will naturally rotate to the position where the electrical angle ψ is 0. 
+                                Then, record the current mechanical angle φ as the initial mechanical angle Φ. Subsequently, the electrical angle ψ can be calculated using the formula ψ = N * (φ - Φ).
+                                    
+//           II. Inverse Park Transform: After initialization, continuously transform the voltage vector from the rotor polar coordinate system (Vrρ, Vrθ) to the stator polar coordinate system (Vsρ, Vsθ).
+// Input    ：φ，Vrρ, Vrθ
+// Output    ：Φ，Vsρ, Vsθ，init_done
 always @ (posedge clk or negedge rstn)
     if(~rstn) begin
         {vs_rho, vs_theta} <= 0;
@@ -246,27 +264,27 @@ always @ (posedge clk or negedge rstn)
         init_phi <= 0;
         init_done <= 1'b0;
     end else begin
-        if(init_cnt<=INIT_CYCLES) begin      // 若 init_cnt 计数变量 <= INIT_CYCLES ，则初始化未完成
-            vs_rho <= 12'd4095;              //    初始化阶段令 Vsρ 取最大
-            vs_theta <= 12'd0;               //    初始化阶段令 Vsθ = 0
+        if(init_cnt<=INIT_CYCLES) begin      // If the counter variable init_cnt is less than or equal to INIT_CYCLES, then initialization is not complete.
+            vs_rho <= 12'd4095;              //    Maximize Vsρ during the initialization phase.
+            vs_theta <= 12'd0;               //    Set Vsθ = 0 during the initialization phase.
             init_cnt <= init_cnt + 1;
-            if(init_cnt==INIT_CYCLES) begin  // 若 init_cnt 计数变量 == INIT_CYCLES , 说明初始化即将完成
-                init_phi <= phi;             //    记录当前机械角度φ 作为初始机械角度 Φ
-                init_done <= 1'b1;           //    令 init_done = 1 ，指示初始化结束
+            if(init_cnt==INIT_CYCLES) begin  // If the counter variable `init_cnt` equals `INIT_CYCLES`, it indicates that initialization is nearing completion.
+                init_phi <= phi;             //    Record the current mechanical angle φ as the initial mechanical angle Φ.
+                init_done <= 1'b1;           //    Set init_done to 1 to indicate that initialization is complete.
             end
-        end else begin                       // 若 init_cnt 计数变量 > INIT_CYCLES ，则初始化完成
-            vs_rho <= vr_rho;                //    反park变换。由于幅值的旋转不变性，Vsρ = Vrρ
-            vs_theta <= vr_theta + psi;      //    反park变换。由于转子极坐标系是定子极坐标系旋转 ψ 得来，所以 Vsθ = Vrθ + ψ
+        end else begin                       // If the counter variable `init_cnt` is greater than `INIT_CYCLES`, initialization is complete.
+            vs_rho <= vr_rho;                //    Inverse Park transformation. Due to the rotational invariance of the magnitude, Vsρ = Vrρ.
+            vs_theta <= vr_theta + psi;      //    Inverse Park transformation. Since the rotor coordinate system is obtained by rotating the stator coordinate system by ψ, Vsθ = Vrθ + ψ.
         end
     end
 
 
 
-// 简介    ：该模块是7段式 SVPWM 发生器，用于生成 3 相上的 PWM 信号。
-// 输入    ：定子极坐标系下的电压矢量 Vsρ, Vsθ
-// 输出    ：PWM使能信号 pwm_en
-//           3相PWM信号 pwm_a, pwm_b, pwm_c
-// 说明    ：该模块产生的 PWM 的频率是 clk 频率 / 2048。例如 clk 为 36.864MHz ，则 PWM 的频率为 36.864MHz / 2048 = 18kHz
+// Introduction: This module is a 7-segment SVPWM generator used to generate 3-phase PWM signals.
+// Input: Voltage vectors Vsρ and Vsθ in the stator polar coordinate system.
+// Output: PWM enable signal pwm_en
+//         3-phase PWM signals pwm_a, pwm_b, pwm_c
+// Note: The frequency of the PWM generated by this module is the clock frequency divided by 2048. For example, if the clock frequency is 36.864 MHz, the PWM frequency is 36.864 MHz / 2048 = 18 kHz.
 svpwm u_svpwm (
     .rstn         ( rstn                     ),
     .clk          ( clk                      ),
@@ -281,17 +299,18 @@ svpwm u_svpwm (
 
 
 
-// 简介    ：该模块用于控制相电流检测 ADC 的采样时机
-// 输入    ：3相PWM信号 pwm_a, pwm_b, pwm_c
-// 输出    ：3相电流 ADC 采样时刻控制信号 sn_adc
-// 原理    ：该模块检测 pwm_a, pwm_b, pwm_c 均为低电平的时刻，并延迟 SAMPLE_DELAY 的时钟周期，在 sn_adc 信号上产生一个时钟周期的高电平。
+// Introduction: This module is used to control the sampling timing of the phase current detection ADC.
+// Inputs: 3-phase PWM signals pwm_a, pwm_b, pwm_c
+// Output: 3-phase current ADC sampling timing control signal sn_adc
+// Principle: This module detects the moment when pwm_a, pwm_b, and pwm_c are all at a low level; 
+              after a delay of SAMPLE_DELAY clock cycles, it generates a high-level pulse lasting one clock cycle on the sn_adc signal.
 hold_detect #(
     .SAMPLE_DELAY ( SAMPLE_DELAY             )
 ) u_adc_sn_ctrl (
     .rstn         ( init_done                ),
     .clk          ( clk                      ),
-    .in           ( ~pwm_a & ~pwm_b & ~pwm_c ),  // input : 当 pwm_a, pwm_b, pwm_c 均为低电平时=1，否则=0
-    .out          ( sn_adc                   )   // output: 若输入信号=1并保持 SAMPLE_DELAY 个周期，则 sn_adc 上产生1个周期的高电平脉冲
+    .in           ( ~pwm_a & ~pwm_b & ~pwm_c ),  // input : Equals 1 when pwm_a, pwm_b, and pwm_c are all low; otherwise, equals 0.
+    .out          ( sn_adc                   )   // output: If the input signal is 1 and remains so for SAMPLE_DELAY cycles, a high-level pulse lasting one cycle is generated on sn_adc.
 );
 
 
