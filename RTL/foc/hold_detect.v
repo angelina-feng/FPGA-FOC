@@ -1,9 +1,10 @@
 
 //--------------------------------------------------------------------------------------------------------
-// 模块： hold_detect
+// Module： hold_detect
 // Type    : synthesizable
 // Standard: Verilog 2001 (IEEE1364-2001)
-// 功能： 检测 in 从高电平变为低电平并保持 SAMPLE_DELAY 个时钟周期，在 sn_adc 信号上产生一个时钟周期的高电平。
+// Function： Detect the transition of 'in' from high to low and its maintenance for SAMPLE_DELAY clock cycles; 
+// this generates a high-level pulse lasting one clock cycle on the sn_adc signal.
 //--------------------------------------------------------------------------------------------------------
 
 module hold_detect #(
