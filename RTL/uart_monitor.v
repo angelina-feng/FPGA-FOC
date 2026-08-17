@@ -1,13 +1,13 @@
 
 //--------------------------------------------------------------------------------------------------------
-// 模块：uart_monitor
+// Module：uart_monitor
 // Type    : synthesizable
 // Standard: Verilog 2001 (IEEE1364-2001)
-// 功能：UART发送器，格式为：115200,8,n,1，可以把 i_val0, i_val1, i_val2, i_val3 变成10进制格式，放在一行里，通过 UART 发送出去
+// Function：UART transmitter (format: 115200, 8, n, 1): converts i_val0, i_val1, i_val2, and i_val3 into decimal format, arranges them on a single line, and transmits them via UART.
 //--------------------------------------------------------------------------------------------------------
 
 module uart_monitor #(
-    parameter [15:0] CLK_DIV = 217 // UART分频倍率，例如若时钟频率为 36.864MHz, CLK_DIV=320，则 UART 波特率为 36.864MHz/320=115200
+    parameter [15:0] CLK_DIV = 217 // UART clock division factor; for example, if the clock frequency is 36.864 MHz and CLK_DIV = 320, the UART baud rate is 36.864 MHz / 320 = 115,200.
 ) (
     input  wire               rstn,
     input  wire               clk,
@@ -16,7 +16,7 @@ module uart_monitor #(
     input  wire signed [15:0] i_val1,
     input  wire signed [15:0] i_val2,
     input  wire signed [15:0] i_val3,
-    output reg                o_uart_tx  // UART TX 信号
+    output reg                o_uart_tx  // UART TX signal
 );
 
 initial o_uart_tx = 1'b1;
