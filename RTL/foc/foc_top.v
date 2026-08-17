@@ -1,33 +1,57 @@
 
 //--------------------------------------------------------------------------------------------------------
-// 模块: foc_top
+// Module: foc_top
 // Type    : synthesizable, IP's top
 // Standard: Verilog 2001 (IEEE1364-2001)
-// 功能：FOC 算法（仅包含电流环） + SVPWM
-// 参数：详见下方注释
-// 输入输出：详见下方注释
+// Function：FOC algorithm (current loop only) + SVPWM
+// Parameters: See notes below for details.
+// Input/Output: See notes below for details.
 //--------------------------------------------------------------------------------------------------------
 
 module foc_top #(
-    // ----------------------------------------------- 模块参数 ---------------------------------------------------------------------------------------------------------------------------------------------------
-    parameter        INIT_CYCLES  = 16777216,       // 决定了初始化步骤占多少个时钟(clk)周期，取值范围为1~4294967294。该值不能太短，因为要留足够的时间让转子回归电角度=0。例如若时钟(clk)频率为 36.864MHz，INIT_CYCLES=16777216，则初始化时间为 16777216/36864000=0.45 秒
-    parameter        ANGLE_INV    = 0,              // 若角度传感器没装反（A->B->C->A 的旋转方向与 φ 增大的方向相同），则该参数应设为 0。若角度传感器装反了（A->B->C->A 的旋转方向与 φ 增大的方向相反），则该参数应设为 1。
-    parameter [ 7:0] POLE_PAIR    = 8'd7,           // 电机极对数 (简记为N)，取值范围1~255，根据电机型号决定。（电角度ψ = 极对数N * 机械角度φ）
-    parameter [ 8:0] MAX_AMP      = 9'd384,         // SVPWM 的最大振幅，取值范围为1~511，该值越小，电机能达到的最大力矩越小；但考虑到使用3相下桥臂电阻采样法来采样电流，该值也不能太大，以保证3个下桥臂有足够的持续导通时间来供ADC进行采样。
-    parameter [ 8:0] SAMPLE_DELAY = 9'd120          // 采样延时，取值范围0~511，考虑到3相的驱动 MOS 管从开始导通到电流稳定需要一定的时间，所以从3个下桥臂都导通，到 ADC 采样时刻之间需要一定的延时。该参数决定了该延时是多少个时钟周期，当延时结束时，该模块在 sn_adc 信号上产生一个高电平脉冲，指示外部 ADC “可以采样了”
+    // ----------------------------------------------- Module Parameters----------------------------------------------------------------------------------------------------------------------------------
+    parameter        INIT_CYCLES  = 16777216,       // This determines the number of clock (clk) cycles for the initialization step, with a valid range of 1 to 4,294,967,294. The value must not be too low, 
+                                                    // as sufficient time is required for the rotor to return to an electrical angle of 0. For example, if the clock (clk) frequency is 36.864 MHz and INIT_CYCLES 
+                                                    // is 16,777,216, the initialization time is 16,777,216 / 36,864,000 = 0.45 seconds. 
+    
+    parameter        ANGLE_INV    = 0,              // If the angle sensor is not installed in reverse (i.e., the direction of rotation A→B→C→A matches the direction in which φ increases), this parameter should 
+                                                    // be set to 0. If the angle sensor is installed in reverse (i.e., the direction of rotation A→B→C→A is opposite to the direction in which φ increases), this 
+                                                    // parameter should be set to 1.
+    
+    parameter [ 7:0] POLE_PAIR    = 8'd7,           // Motor pole-pair count (abbreviated as N): ranges from 1 to 255, determined by the motor model. (Electrical angle ψ = pole-pair count N × mechanical angle φ)
+    
+    parameter [ 8:0] MAX_AMP      = 9'd384,         // The maximum amplitude for SVPWM ranges from 1 to 511; a lower value results in a lower maximum motor torque. However, given the use of a three-phase lower-leg 
+                                                    // resistor current sampling method, the value cannot be excessively high, as sufficient continuous conduction time for the three lower-leg switches is required for 
+                                                    // the ADC to perform sampling.  
+    
+    parameter [ 8:0] SAMPLE_DELAY = 9'd120          // Sampling delay; the value ranges from 0 to 511. Since the three-phase MOSFETs require a certain amount of time to transition from the onset of conduction to a stable 
+                                                    // current state, a delay is necessary between the moment all three low-side switches turn on and the ADC sampling instant. This parameter specifies the duration 
+                                                    // of the delay in clock cycles; upon completion of the delay, the module generates a high-level pulse on the `sn_adc` signal to indicate to the external ADC that 
+                                                    // it is ready to sample.
 ) (
-    // ----------------------------------------------- 驱动时钟和复位 ---------------------------------------------------------------------------------------------------------------------------------------------
-    input  wire               rstn,                 // 复位信号，应该先拉低来对模块进行复位，然后一直保持高电平来让模块正常工作。
-    input  wire               clk,                  // 时钟信号，频率可取几十MHz。控制频率 = 时钟频率 / 2048。比如若时钟频率为 36.864MHz ，那么控制频率为 36.864MHz/2048=18kHz。（控制频率 = 3相电流采样的采样率 = PID算法的控制频率 = SVPWM占空比的更新频率）
-    // ----------------------------------------------- PI 参数 ----------------------------------------------------------------------------------------------------------------------------------------------------
+    // ----------------------------------------------- Driving Clock and Reset ---------------------------------------------------------------------------------------------------------------------------------------------
+    input  wire               rstn,                 // The reset signal should first be pulled low to reset the module, and then held high to allow the module to operate normally.
+    
+    input  wire               clk,                  // The clock signal frequency can be in the range of tens of MHz. Control frequency = Clock frequency / 2048. For example, if the clock frequency is 36.864 MHz, the control 
+                                                    // frequency is 36.864 MHz / 2048 = 18 kHz. (Control frequency = 3-phase current sampling rate = PID algorithm control frequency = SVPWM duty cycle update frequency)    
+    
+    // ----------------------------------------------- PI parameters ----------------------------------------------------------------------------------------------------------------------------------------------------
     input  wire        [30:0] Kp,
     input  wire        [30:0] Ki,
-    // ----------------------------------------------- 角度传感器输入信号 -----------------------------------------------------------------------------------------------------------------------------------------
-    input  wire        [11:0] phi,                  // 角度传感器输入（机械角度，简记为φ），取值范围0~4095。0对应0°；1024对应90°；2048对应180°；3072对应270°。
-    // ----------------------------------------------- 3相电流 ADC 采样时刻控制信号 和采样结果输入信号 ------------------------------------------------------------------------------------------------------------
-    output wire               sn_adc,               // 3相电流 ADC 采样时刻控制信号，当需要进行一次采样时，sn_adc 信号上产生一个时钟周期的高电平脉冲，指示ADC应该进行采样了。
-    input  wire               en_adc,               // 3相电流 ADC 采样结果有效信号，sn_adc 产生高电平脉冲后，外部ADC开始采样3相电流，在转换结束后，应在 en_adc 信号上产生一个周期的高电平脉冲，同时把ADC转换结果产生在 adc_a, adc_b, adc_c 信号上
-    input  wire        [11:0] adc_a, adc_b, adc_c,  // 3相电流 ADC 采样结果（简记为ADCa, ADCb, ADCc），取值范围0 ~ 4095
+    
+    // ----------------------------------------------- Angle sensor input signal -----------------------------------------------------------------------------------------------------------------------------------------
+    input  wire        [11:0] phi,                  // Angle sensor input (mechanical angle, abbreviated as φ) with a value range of 0–4095: 0 corresponds to 0°, 1024 to 90°, 2048 to 180°, and 3072 to 270°.
+  
+    // --------------------------------3-phase current ADC sampling timing control signals and sampling result input signals --------------------------------------------------------------------------------------
+    output wire               sn_adc,               // This is the control signal for the 3-phase current ADC sampling instant; when a sample needs to be taken, a high-level pulse lasting one clock cycle is generated on the 
+                                                    // `sn_adc` signal to indicate that the ADC should perform a sampling operation.。
+    
+    input  wire               en_adc,               // Regarding the valid signal for the 3-phase current ADC sampling results: after `sn_adc` generates a high-level pulse, the external ADC begins sampling the 3-phase currents. 
+                                                    // Upon completion of the conversion, a high-level pulse lasting one clock cycle should be generated on the `en_adc` signal, while the ADC conversion results are output on the 
+                                                    // `adc_a`, `adc_b`, and `adc_c` signals.
+    
+    input  wire        [11:0] adc_a, adc_b, adc_c,  // 3-phase current ADC sampling results (denoted as ADCa, ADCb, and ADCc), with a value range of 0 to 4095.
+    
     // ----------------------------------------------- 3相 PWM 信号，（包含使能信号） -----------------------------------------------------------------------------------------------------------------------------
     output wire               pwm_en,               // 3相共用的使能信号，当 pwm_en=0 时，6个MOS管全部关断。
     output wire               pwm_a,                // A相PWM信号。当 =0 时。下桥臂导通；当 =1 时，上桥臂导通
