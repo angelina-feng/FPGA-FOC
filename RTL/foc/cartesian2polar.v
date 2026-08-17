@@ -1,9 +1,9 @@
 
 //--------------------------------------------------------------------------------------------------------
-// 模块： cartesian2polar
+// Module： cartesian2polar
 // Type    : synthesizable
 // Standard: Verilog 2001 (IEEE1364-2001)
-// 功能： 把直角坐标系 (x,y) 转换为极坐标系 
+// Function： Convert the Cartesian coordinate system (x, y) to the polar coordinate system.
 //--------------------------------------------------------------------------------------------------------
 
 module cartesian2polar #(
